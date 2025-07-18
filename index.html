@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Public Photo Gallery with Admin Control</title>
+
+    <!-- Firebase SDKs (v9 compatibility mode for easier syntax) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+    <!-- Image Compression Library -->
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.1/dist/browser-image-compression.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            margin: 0;
+            padding: 20px;
+        }
+
+        /* --- Main Layout & Containers --- */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            color: #0d6efd;
+        }
+        
+        .section {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* --- Admin & Auth Section --- */
+        #top-controls-wrapper {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        #auth-section {
+            flex: 1;
+            min-width: 280px;
+        }
+
+        #auth-section input {
+            width: calc(100% - 20px);
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        
+        /* --- Uploader Section --- */
+        #uploader-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        #comment {
+            width: calc(100% - 22px);
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            resize: vertical;
+            min-height: 60px;
+            margin-top: 10px;
+        }
+
+        .file-input-wrapper {
+            margin-top: 15px;
+        }
+
+        #progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        #progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background-color: #0d6efd;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        #upload-status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #6c757d;
+        }
+
+        /* --- Gallery Section --- */
+        #gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .photo-card {
+            background-color: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: opacity 0.4s ease, transform 0.2s ease;
+        }
+        
+        .photo-card.hidden-by-admin {
+            opacity: 0.4;
+            transform: scale(0.98);
+        }
+
+        .photo-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .photo-card-content {
+            padding: 15px;
+        }
+
+        .photo-card-comment {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .photo-card-timestamp {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        
+        /* --- Admin Toggle Switch --- */
+        .admin-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* --- Buttons --- */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: #0d6efd;
+            color: white;
+            margin-top: 15px;
+        }
+
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+        }
+        
+        .btn-primary:disabled {
+            background-color: #a0c7ff;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Public Photo Gallery</h1>
+            <p>Upload a photo and a comment. Admins will review and approve uploads.</p>
+        </div>
+
+        <!-- Login Section -->
+        <div id="top-controls-wrapper">
+            <div id="auth-section" class="section">
+                <h4>Admin Login</h4>
+                <input id="email" type="email" placeholder="Admin Email" />
+                <input id="password" type="password" placeholder="Password" />
+                <button id="login-btn" class="btn btn-secondary">Login</button>
+                <button id="logout-btn" class="btn btn-secondary" style="display:none;">Logout</button>
+                <div id="login-message" style="margin-top:10px;"></div>
+            </div>
+        </div>
+
+        <!-- Uploader Section -->
+        <div id="uploader-section" class="section">
+            <h2>Upload a Photo</h2>
+            <div class="file-input-wrapper">
+                <input type="file" id="image-input" accept="image/png, image/jpeg" />
+            </div>
+            <textarea id="comment" placeholder="Add a comment..."></textarea>
+            <button id="upload-btn" class="btn btn-primary" disabled>Select an image to upload</button>
+            <div id="progress-bar">
+                <div id="progress-bar-fill"></div>
+            </div>
+            <div id="upload-status"></div>
+        </div>
+
+        <!-- Gallery Section -->
+        <div id="gallery-section" class="section">
+            <h2>Approved Photos</h2>
+            <div id="gallery-grid">
+                <!-- Photos will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Firebase Initialization ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
+            authDomain: "shamankingdata.firebaseapp.com",
+            projectId: "shamankingdata",
+            storageBucket: "shamankingdata.appspot.com", // Corrected from .firebasestorage.app
+            messagingSenderId: "757444066890",
+            appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const storage = firebase.storage();
+
+        // --- Global State ---
+        let isAdmin = false;
+        let selectedFile = null;
+
+        // --- UI Element References ---
+        const imageInput = document.getElementById('image-input');
+        const commentInput = document.getElementById('comment');
+        const uploadBtn = document.getElementById('upload-btn');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+        const progressBar = document.getElementById('progress-bar');
+        const uploadStatus = document.getElementById('upload-status');
+        const galleryGrid = document.getElementById('gallery-grid');
+
+        // --- Authentication Logic ---
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const adminDoc = await db.collection('admins').doc(user.uid).get();
+                if (adminDoc.exists) {
+                    isAdmin = true;
+                    document.getElementById('login-message').innerText = `Logged in as Admin: ${user.email}`;
+                    document.getElementById('login-btn').style.display = 'none';
+                    document.getElementById('logout-btn').style.display = 'inline-block';
+                } else {
+                    isAdmin = false;
+                     document.getElementById('login-message').innerText = 'Logged in as a regular user.';
+                }
+            } else {
+                isAdmin = false;
+                document.getElementById('login-message').innerText = '';
+                document.getElementById('login-btn').style.display = 'inline-block';
+                document.getElementById('logout-btn').style.display = 'none';
+            }
+            // Refresh the gallery view based on new admin status
+            setupGalleryListener(); 
+        });
+
+        document.getElementById('login-btn').addEventListener('click', () => {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('password').value;
+            auth.signInWithEmailAndPassword(email, pass).catch(e => alert("Login failed: " + e.message));
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+
+        // --- File Selection & Upload Logic ---
+        imageInput.addEventListener('change', (e) => {
+            selectedFile = e.target.files[0];
+            if (selectedFile) {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Image';
+                uploadStatus.textContent = `Selected: ${selectedFile.name}`;
+            } else {
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = 'Select an image to upload';
+            }
+        });
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) {
+                alert('Please select a file first!');
+                return;
+            }
+
+            // Disable form during upload
+            uploadBtn.disabled = true;
+            imageInput.disabled = true;
+            commentInput.disabled = true;
+            progressBar.style.display = 'block';
+            uploadStatus.textContent = 'Converting image to WebP...';
+
+            // 1. Convert image to WebP
+            const options = {
+                maxSizeMB: 1,
+                maxWidthOrHeight: 1920,
+                useWebWorker: true,
+                fileType: 'image/webp'
+            };
+
+            try {
+                const webpFile = await imageCompression(selectedFile, options);
+                uploadStatus.textContent = 'Uploading...';
+
+                // 2. Upload to Firebase Storage
+                const fileName = `${Date.now()}-${webpFile.name}`;
+                const storageRef = storage.ref(`userUploads/${fileName}`);
+                const uploadTask = storageRef.put(webpFile);
+
+                uploadTask.on('state_changed',
+                    (snapshot) => {
+                        // Progress function
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        progressBarFill.style.width = progress + '%';
+                    },
+                    (error) => {
+                        // Error function
+                        console.error("Upload failed:", error);
+                        uploadStatus.textContent = `Upload failed: ${error.message}`;
+                        resetUploader();
+                    },
+                    async () => {
+                        // Complete function
+                        uploadStatus.textContent = 'Getting download URL...';
+                        const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                        
+                        // 3. Save info to Firestore
+                        await db.collection('userUploads').add({
+                            imageUrl: downloadURL,
+                            comment: commentInput.value || "No comment.",
+                            isVisible: true, // Default to visible, admin can hide it
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        
+                        uploadStatus.textContent = 'Upload complete!';
+                        setTimeout(resetUploader, 2000);
+                    }
+                );
+            } catch (error) {
+                console.error('Error during conversion or upload:', error);
+                uploadStatus.textContent = `Error: ${error.message}`;
+                resetUploader();
+            }
+        });
+
+        function resetUploader() {
+            uploadBtn.disabled = false;
+            imageInput.disabled = false;
+            commentInput.disabled = false;
+            imageInput.value = '';
+            commentInput.value = '';
+            progressBar.style.display = 'none';
+            progressBarFill.style.width = '0%';
+            uploadStatus.textContent = '';
+            uploadBtn.textContent = 'Select an image to upload';
+            uploadBtn.disabled = true;
+            selectedFile = null;
+        }
+
+        // --- Real-time Gallery Logic ---
+        let galleryUnsubscribe = null; // To hold the listener function
+
+        function setupGalleryListener() {
+            // If a listener is already active, detach it first
+            if (galleryUnsubscribe) {
+                galleryUnsubscribe();
+            }
+            
+            let query = db.collection('userUploads').orderBy('createdAt', 'desc');
+
+            // The Firestore query no longer filters by 'isVisible' to avoid the index error.
+            // Filtering will be done on the client-side instead.
+
+            galleryUnsubscribe = query.onSnapshot(snapshot => {
+                galleryGrid.innerHTML = ''; // Clear current gallery
+                if (snapshot.empty) {
+                    galleryGrid.innerHTML = '<p>No photos have been uploaded yet.</p>';
+                    return;
+                }
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+
+                    // **FIX**: Perform filtering in the browser for non-admins
+                    if (!isAdmin && !data.isVisible) {
+                        return; // Skip this document if it's hidden and user is not an admin
+                    }
+
+                    const card = createPhotoCard(doc.id, data);
+                    galleryGrid.appendChild(card);
+                });
+            }, error => {
+                // This will catch errors like missing permissions or index issues.
+                console.error("Error with gallery listener:", error);
+                galleryGrid.innerHTML = `<p style="color: red;">Error loading photos. Check the console for details.</p>`;
+            });
+        }
+
+        function createPhotoCard(docId, data) {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            if (!data.isVisible) {
+                card.classList.add('hidden-by-admin');
+            }
+
+            const date = data.createdAt ? data.createdAt.toDate().toLocaleString() : 'Just now';
+
+            let adminControlsHTML = '';
+            if (isAdmin) {
+                const isChecked = data.isVisible ? 'checked' : '';
+                adminControlsHTML = `
+                    <div class="admin-toggle">
+                        <span>Show Publicly</span>
+                        <label class="switch">
+                            <input type="checkbox" class="visibility-toggle" data-doc-id="${docId}" ${isChecked}>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = `
+                <img src="${data.imageUrl}" alt="User upload" loading="lazy">
+                <div class="photo-card-content">
+                    <p class="photo-card-comment">${data.comment}</p>
+                    <p class="photo-card-timestamp">${date}</p>
+                    ${adminControlsHTML}
+                </div>
+            `;
+            
+            // Add event listener for the toggle if it exists
+            const toggle = card.querySelector('.visibility-toggle');
+            if (toggle) {
+                toggle.addEventListener('change', (e) => {
+                    const newVisibility = e.target.checked;
+                    db.collection('userUploads').doc(docId).update({ isVisible: newVisibility });
+                });
+            }
+
+            return card;
+        }
+
+        // --- Initial Load ---
+        window.onload = () => {
+            setupGalleryListener();
+        };
+    </script>
+</body>
+</html>

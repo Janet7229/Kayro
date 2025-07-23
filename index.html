@@ -3,36 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Multi-Month Editable Calendar</title>
+  <title>Admin Calendar</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 10px;
       margin: 0;
+      padding: 0;
+      text-align: center;
     }
 
-    h2 {
-      font-size: 1.4em;
+    #login, #logoutBtn {
+      margin: 20px;
     }
 
-    .controls {
-      margin: 10px 0;
-    }
-
-    select {
-      padding: 6px;
+    input, button {
+      padding: 8px;
       font-size: 1em;
       margin: 5px;
     }
 
     .calendar-container {
-      margin: 20px auto;
-      max-width: 1000px;
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       gap: 20px;
+      padding: 10px;
     }
 
     .calendar-block {
@@ -61,52 +56,47 @@
     }
 
     .day-label {
-      font-weight: bold;
       background-color: #f0f0f0;
+      font-weight: bold;
     }
 
     .day {
       background-color: #f9f9f9;
       cursor: pointer;
-      transition: background-color 0.3s;
-    }
-
-    .day:hover {
-      background-color: #e0e0e0;
     }
 
     .highlight {
-      background-color: #ffdb99 !important;
+      background-color: #c2f0c2 !important;
+      color: #000;
     }
 
     @media (max-width: 600px) {
       .calendar-block {
         width: 100%;
       }
-
-      .day-label, .day {
-        font-size: 0.75em;
-        padding: 6px 3px;
-      }
-
-      h2 {
-        font-size: 1.1em;
-      }
     }
   </style>
 </head>
 <body>
-  <h2>Editable Calendar (This Month + Next 6 Months)</h2>
-  <div class="controls">
-    <select id="monthSelect"></select>
-    <select id="yearSelect"></select>
-  </div>
-  <div id="calendarContainer" class="calendar-container"></div>
+  <h2 id="header">Admin Calendar (Login Required)</h2>
 
-  <!-- Firebase SDK -->
+  <div id="login">
+    <input type="email" id="email" placeholder="Admin Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <button id="logoutBtn" style="display:none;" onclick="logout()">Logout</button>
+  <div id="calendarContainer" class="calendar-container" style="display:none;"></div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import {
+      getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getFirestore, doc, setDoc, getDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
@@ -118,42 +108,54 @@
     };
 
     const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
     const db = getFirestore(app);
+
+    const adminEmail = "admin@example.com"; // <-- Set your admin email here
+
+    const loginDiv = document.getElementById("login");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const calendarContainer = document.getElementById("calendarContainer");
+
+    window.login = async function () {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        alert("Login failed: " + err.message);
+      }
+    };
+
+    window.logout = function () {
+      signOut(auth);
+    };
+
+    onAuthStateChanged(auth, async user => {
+      if (user && user.email === adminEmail) {
+        loginDiv.style.display = "none";
+        logoutBtn.style.display = "inline-block";
+        calendarContainer.style.display = "flex";
+        document.getElementById("header").textContent = `Welcome, Admin!`;
+        renderCalendars();
+      } else {
+        loginDiv.style.display = "block";
+        logoutBtn.style.display = "none";
+        calendarContainer.style.display = "none";
+        document.getElementById("header").textContent = "Admin Calendar (Login Required)";
+      }
+    });
 
     const monthNames = [
       "January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"
     ];
 
-    const monthSelect = document.getElementById('monthSelect');
-    const yearSelect = document.getElementById('yearSelect');
-    const container = document.getElementById('calendarContainer');
-
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    // Fill dropdowns
-    for (let i = 0; i < 12; i++) {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = monthNames[i];
-      monthSelect.appendChild(opt);
-    }
-
-    for (let y = currentYear - 2; y <= currentYear + 3; y++) {
-      const opt = document.createElement('option');
-      opt.value = y;
-      opt.textContent = y;
-      yearSelect.appendChild(opt);
-    }
-
-    monthSelect.value = currentMonth;
-    yearSelect.value = currentYear;
-
-    // Render 7 months of calendar
-    async function renderCalendars(baseMonth, baseYear) {
-      container.innerHTML = '';
+    async function renderCalendars() {
+      const now = new Date();
+      const baseMonth = now.getMonth();
+      const baseYear = now.getFullYear();
+      calendarContainer.innerHTML = "";
 
       for (let offset = 0; offset < 7; offset++) {
         const date = new Date(baseYear, baseMonth + offset, 1);
@@ -201,7 +203,7 @@
           }
 
           day.addEventListener('click', async () => {
-            const input = prompt(`Note for ${monthNames[month]} ${d}:`, savedData[key] || '');
+            const input = prompt(`Edit note for ${monthNames[month]} ${d}:`, savedData[key] || '');
             if (input !== null) {
               day.textContent = input || d;
               if (input) {
@@ -219,19 +221,9 @@
         }
 
         block.appendChild(cal);
-        container.appendChild(block);
+        calendarContainer.appendChild(block);
       }
     }
-
-    renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
-
-    monthSelect.addEventListener('change', () => {
-      renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
-    });
-
-    yearSelect.addEventListener('change', () => {
-      renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
-    });
   </script>
 </body>
 </html>

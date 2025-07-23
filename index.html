@@ -13,6 +13,10 @@
             background-color: #f4f7f6;
             color: #333;
         }
+        /* --- New style for paste mode --- */
+        body.paste-mode {
+            cursor: copy;
+        }
 
         /* --- Login & Header --- */
         #header {
@@ -92,6 +96,9 @@
             align-items: center;
             justify-content: center;
             word-wrap: break-word;
+            -webkit-user-select: none; /* Safari */
+            -ms-user-select: none; /* IE 10+ */
+            user-select: none; /* Standard */
         }
         .day-label {
             background-color: #f0f0f0;
@@ -176,6 +183,25 @@
             transform: scale(1.15);
         }
 
+        /* --- New Toast Notification --- */
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            z-index: 2000;
+            opacity: 0;
+            transition: opacity 0.5s, bottom 0.5s;
+        }
+        .toast-notification.show {
+            opacity: 1;
+            bottom: 30px;
+        }
+
         @media (max-width: 600px) {
             .calendar-block { width: 100%; }
             body { padding: 10px; }
@@ -238,6 +264,29 @@
         const calendarContainer = document.getElementById("calendarContainer");
         let activeUnsubscribes = [];
 
+        // --- State for Copy/Paste ---
+        let copiedData = null;
+        let pressTimer = null;
+
+        // --- Toast Notification ---
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 500);
+            }, 2000);
+        }
+
         // --- Modal Logic ---
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');
@@ -248,12 +297,8 @@
 
         modalColorPicker.addEventListener('click', (e) => {
             if (e.target.classList.contains('color-option')) {
-                // Remove 'selected' from any previously selected option
                 const currentSelected = modalColorPicker.querySelector('.selected');
-                if (currentSelected) {
-                    currentSelected.classList.remove('selected');
-                }
-                // Add 'selected' to the clicked option
+                if (currentSelected) currentSelected.classList.remove('selected');
                 e.target.classList.add('selected');
                 selectedColor = e.target.dataset.color;
             }
@@ -265,13 +310,9 @@
             selectedColor = dayData.color || 'default';
             
             const currentSelected = modalColorPicker.querySelector('.selected');
-            if (currentSelected) {
-                currentSelected.classList.remove('selected');
-            }
+            if (currentSelected) currentSelected.classList.remove('selected');
             const newSelectedOption = modalColorPicker.querySelector(`[data-color="${selectedColor}"]`);
-            if (newSelectedOption) {
-                newSelectedOption.classList.add('selected');
-            }
+            if (newSelectedOption) newSelectedOption.classList.add('selected');
 
             onSaveCallback = onSave;
             modal.style.display = 'flex';
@@ -284,9 +325,7 @@
         }
 
         document.getElementById('modalSave').addEventListener('click', () => {
-            if (onSaveCallback) {
-                onSaveCallback(modalInput.value, selectedColor);
-            }
+            if (onSaveCallback) onSaveCallback(modalInput.value, selectedColor);
             hideModal();
         });
         document.getElementById('modalCancel').addEventListener('click', hideModal);
@@ -306,6 +345,15 @@
         loginBtn.addEventListener('click', login);
         logoutBtn.addEventListener('click', logout);
 
+        // --- Cancel Paste Mode with Escape Key ---
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && copiedData) {
+                copiedData = null;
+                document.body.classList.remove('paste-mode');
+                showToast('Paste cancelled');
+            }
+        });
+
         onAuthStateChanged(auth, user => {
             if (user && user.email === adminEmail) {
                 loginDiv.style.display = "none";
@@ -314,7 +362,7 @@
                 document.getElementById("header").textContent = `Welcome, Admin!`;
                 renderAndListenToCalendars();
             } else {
-                if (user) { // If a non-admin user is logged in, show message and log out
+                if (user) {
                     alert(`Login successful, but ${user.email} is not an authorized admin.`);
                     signOut(auth);
                 }
@@ -388,14 +436,12 @@
                     day.className = 'day';
                     const key = `d${d}`;
                     
-                    // Data is now an object {note: '', color: ''} or undefined
                     const dayData = savedData[key] || {};
                     const note = dayData.note || '';
                     const color = dayData.color || 'default';
 
                     day.textContent = note || d;
 
-                    // Apply highlight and color classes
                     if (note) {
                         day.classList.add('highlight');
                         if (color && color !== 'default') {
@@ -403,20 +449,53 @@
                         }
                     }
 
-                    day.addEventListener('click', () => {
+                    // --- Event Listeners for Copy/Paste/Edit ---
+                    const handleMouseUp = async () => {
+                        clearTimeout(pressTimer); // Prevent hold action on a normal click
+                        
+                        // PASTE LOGIC
+                        if (copiedData) {
+                            const dataToSave = { ...savedData };
+                            dataToSave[key] = copiedData;
+                            await setDoc(calendarRef, dataToSave);
+                            showToast('Pasted!');
+                            copiedData = null;
+                            document.body.classList.remove('paste-mode');
+                            return;
+                        }
+
+                        // EDIT LOGIC (for a normal click)
                         showEditModal(`Edit note for ${monthNames[month]} ${d}`, dayData, async (newNoteText, newColor) => {
                             const trimmedNote = newNoteText.trim();
-                            const dataToSave = { ...savedData }; // Make a copy of the month's data
-
+                            const dataToSave = { ...savedData };
                             if (trimmedNote) {
                                 dataToSave[key] = { note: trimmedNote, color: newColor };
                             } else {
-                                delete dataToSave[key]; // If note is empty, remove the entry
+                                delete dataToSave[key];
                             }
-                            
                             await setDoc(calendarRef, dataToSave);
                         });
-                    });
+                    };
+
+                    const handleMouseDown = () => {
+                        pressTimer = setTimeout(() => {
+                            // COPY LOGIC (on hold)
+                            if (dayData.note) {
+                                copiedData = { ...dayData };
+                                document.body.classList.add('paste-mode');
+                                showToast('Copied! Click another date to paste.');
+                            }
+                        }, 500); // Hold for 500ms to copy
+                    };
+
+                    const handleMouseLeave = () => {
+                        clearTimeout(pressTimer);
+                    };
+
+                    day.addEventListener('mouseup', handleMouseUp);
+                    day.addEventListener('mousedown', handleMouseDown);
+                    day.addEventListener('mouseleave', handleMouseLeave);
+                    
                     calElement.appendChild(day);
                 }
             });

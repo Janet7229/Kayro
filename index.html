@@ -6,22 +6,57 @@
     <title>Admin Calendar</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             text-align: center;
+            background-color: #f4f7f6;
+            color: #333;
         }
 
-        #login, #logoutBtn {
-            margin: 20px;
+        /* --- Login & Header --- */
+        #header {
+            color: #2c3e50;
         }
-
+        #login {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 320px;
+            margin: 20px auto;
+        }
         input, button {
-            padding: 8px;
+            width: calc(100% - 22px);
+            padding: 12px;
             font-size: 1em;
-            margin: 5px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #logoutBtn {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            width: auto;
+            padding: 8px 15px;
+            background-color: #e74c3c;
+        }
+        #logoutBtn:hover {
+            background-color: #c0392b;
         }
 
+        /* --- Calendar --- */
         .calendar-container {
             display: flex;
             flex-wrap: wrap;
@@ -29,51 +64,91 @@
             gap: 20px;
             padding: 10px;
         }
-
         .calendar-block {
-            border: 1px solid #ccc;
-            padding: 10px;
-            width: 300px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            width: 320px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
-
         .month-title {
             font-weight: bold;
-            margin-bottom: 10px;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            color: #2c3e50;
         }
-
         .calendar {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
+            gap: 5px;
         }
-
         .day-label, .day {
-            padding: 10px 5px;
-            border: 1px solid #ccc;
-            font-size: 0.85em;
+            padding: 5px;
+            border-radius: 4px;
+            font-size: 0.8em;
             min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             word-wrap: break-word;
         }
-
         .day-label {
             background-color: #f0f0f0;
             font-weight: bold;
         }
-
         .day {
             background-color: #f9f9f9;
             cursor: pointer;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .day:hover {
+            background-color: #e9e9e9;
+            transform: scale(1.05);
+        }
+        .highlight {
+            background-color: #a2e2a2 !important;
+            color: #000;
+            font-weight: bold;
+        }
+        .empty-day {
+            background-color: transparent;
         }
 
-        .highlight {
-            background-color: #c2f0c2 !important;
-            color: #000;
+        /* --- Modal --- */
+        .modal-backdrop {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
         }
+        .modal-content {
+            background-color: white;
+            padding: 25px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 { margin-top: 0; }
+        .modal-content input { width: calc(100% - 24px); }
+        .modal-buttons {
+            margin-top: 15px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .modal-buttons button { width: auto; }
+        .modal-buttons .cancel-btn { background-color: #95a5a6; }
+        .modal-buttons .cancel-btn:hover { background-color: #7f8c8d; }
 
         @media (max-width: 600px) {
-            .calendar-block {
-                width: 100%;
-            }
+            .calendar-block { width: 100%; }
+            body { padding: 10px; }
         }
     </style>
 </head>
@@ -89,16 +164,26 @@
     <button id="logoutBtn" style="display:none;">Logout</button>
     <div id="calendarContainer" class="calendar-container" style="display:none;"></div>
 
+    <!-- Modal for editing and alerts -->
+    <div id="modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content">
+            <h3 id="modalTitle">Edit Note</h3>
+            <p id="modalMessage" style="display: none;"></p>
+            <input type="text" id="modalInput" />
+            <div class="modal-buttons">
+                <button id="modalCancel" class="cancel-btn">Cancel</button>
+                <button id="modalSave">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import {
-            getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
-        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import {
-            getFirestore, doc, setDoc, getDoc
-        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // --- Firebase Configuration ---
+        // NOTE: Corrected storageBucket URL to use the standard .appspot.com domain
         const firebaseConfig = {
             apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
             authDomain: "shamankingdata.firebaseapp.com",
@@ -109,76 +194,128 @@
         };
 
         // --- Initialize Firebase ---
+        console.log("Initializing Firebase...");
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        console.log("Firebase initialized.");
 
         // --- Configuration & Element Selection ---
-        const adminEmail = "admin@example.com"; // <-- Set your admin email here
+        const adminEmail = "admin@example.com"; // <-- IMPORTANT: Make sure you log in with this exact email
         const loginDiv = document.getElementById("login");
-        const loginBtn = document.getElementById("loginBtnAction"); // Get button by new ID
+        const loginBtn = document.getElementById("loginBtnAction");
         const logoutBtn = document.getElementById("logoutBtn");
         const calendarContainer = document.getElementById("calendarContainer");
+        let activeUnsubscribes = []; // To store snapshot listeners
+
+        // --- Modal Logic ---
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalInput = document.getElementById('modalInput');
+        let onSaveCallback = null;
+
+        function showEditModal(title, initialValue, onSave) {
+            modalTitle.textContent = title;
+            modalInput.value = initialValue;
+            onSaveCallback = onSave;
+            modal.style.display = 'flex';
+            modalInput.focus();
+        }
+
+        function hideModal() {
+            modal.style.display = 'none';
+            onSaveCallback = null;
+        }
+
+        document.getElementById('modalSave').addEventListener('click', () => {
+            if (onSaveCallback) {
+                onSaveCallback(modalInput.value);
+            }
+            hideModal();
+        });
+        document.getElementById('modalCancel').addEventListener('click', hideModal);
+
 
         // --- Functions ---
         const login = async () => {
             const email = document.getElementById("email").value;
             const password = document.getElementById("password").value;
+            console.log(`Attempting to login with email: ${email}`);
             try {
                 await signInWithEmailAndPassword(auth, email, password);
+                console.log("Login successful via function call.");
             } catch (err) {
-                alert("Login failed: " + err.message);
+                console.error("Login failed:", err.message);
+                alert("Login Failed: " + err.message); // Simple alert for login failure is okay
             }
         };
 
         const logout = () => {
+            console.log("Logging out.");
             signOut(auth);
         };
         
-        // --- Attach Event Listeners (The Fix) ---
+        // --- Attach Event Listeners ---
         loginBtn.addEventListener('click', login);
         logoutBtn.addEventListener('click', logout);
 
         // --- Authentication State Change Handler ---
-        onAuthStateChanged(auth, async user => {
-            if (user && user.email === adminEmail) {
-                loginDiv.style.display = "none";
-                logoutBtn.style.display = "inline-block";
-                calendarContainer.style.display = "flex";
-                document.getElementById("header").textContent = `Welcome, Admin!`;
-                renderCalendars();
+        onAuthStateChanged(auth, user => {
+            console.log("Auth state changed. Checking user...");
+            if (user) {
+                console.log(`User is signed in. Email: ${user.email}`);
+                // The crucial check: does the logged-in email match the admin email?
+                if (user.email === adminEmail) {
+                    console.log("Admin user confirmed. Showing calendar.");
+                    loginDiv.style.display = "none";
+                    logoutBtn.style.display = "inline-block";
+                    calendarContainer.style.display = "flex";
+                    document.getElementById("header").textContent = `Welcome, Admin!`;
+                    renderAndListenToCalendars(); // Switched to the real-time function
+                } else {
+                    console.warn("Login successful, but user is not an admin. Forcing logout.");
+                    alert(`Login successful, but ${user.email} is not an authorized admin.`);
+                    signOut(auth); // Log out non-admin users
+                }
             } else {
+                console.log("No user is signed in. Showing login form.");
                 loginDiv.style.display = "block";
                 logoutBtn.style.display = "none";
                 calendarContainer.style.display = "none";
                 document.getElementById("header").textContent = "Admin Calendar (Login Required)";
+                
+                // Clean up old listeners when user logs out
+                console.log("Cleaning up old calendar listeners.");
+                activeUnsubscribes.forEach(unsub => unsub());
+                activeUnsubscribes = [];
             }
         });
 
         // --- Calendar Rendering Logic ---
-        const monthNames = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ];
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-        async function renderCalendars() {
+        function renderAndListenToCalendars() {
+            console.log("Starting calendar render process...");
             const now = new Date();
             const baseMonth = now.getMonth();
             const baseYear = now.getFullYear();
-            calendarContainer.innerHTML = "";
+            calendarContainer.innerHTML = ""; // Clear previous calendars
+
+            // Clean up any lingering listeners before creating new ones
+            activeUnsubscribes.forEach(unsub => unsub());
+            activeUnsubscribes = [];
 
             for (let offset = 0; offset < 7; offset++) {
                 const date = new Date(baseYear, baseMonth + offset, 1);
                 const month = date.getMonth();
                 const year = date.getFullYear();
                 const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
-
-                const saved = await getDoc(doc(db, "calendars", docId));
-                const savedData = saved.exists() ? saved.data() : {};
-
+                
+                // Create placeholder structure immediately
                 const block = document.createElement('div');
                 block.className = 'calendar-block';
-
+                block.id = `cal-block-${docId}`; // Give it an ID to find it later
+                
                 const title = document.createElement('div');
                 title.className = 'month-title';
                 title.textContent = `${monthNames[month]} ${year}`;
@@ -186,52 +323,84 @@
 
                 const cal = document.createElement('div');
                 cal.className = 'calendar';
+                cal.id = `cal-${docId}`;
+                block.appendChild(cal);
+                calendarContainer.appendChild(block);
 
+                // Now, listen for data for this calendar
+                listenToCalendarData(year, month, docId);
+            }
+            console.log("All calendar placeholders created.");
+        }
+
+        function listenToCalendarData(year, month, docId) {
+            const calendarRef = doc(db, "calendars", docId);
+
+            const unsubscribe = onSnapshot(calendarRef, (docSnap) => {
+                console.log(`Received update for calendar: ${docId}`);
+                const savedData = docSnap.exists() ? docSnap.data() : {};
+                
+                const calElement = document.getElementById(`cal-${docId}`);
+                if (!calElement) {
+                    console.error(`Could not find calendar element for ${docId}`);
+                    return;
+                }
+                calElement.innerHTML = ''; // Clear old days before redrawing
+
+                // Draw day labels
                 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                for (let d of days) {
+                days.forEach(d => {
                     const label = document.createElement('div');
                     label.className = 'day-label';
                     label.textContent = d;
-                    cal.appendChild(label);
-                }
+                    calElement.appendChild(label);
+                });
 
+                // Draw empty days for spacing
                 const firstDay = new Date(year, month, 1).getDay();
-                const numDays = new Date(year, month + 1, 0).getDate();
-
                 for (let i = 0; i < firstDay; i++) {
-                    cal.appendChild(document.createElement('div'));
+                    const emptyDay = document.createElement('div');
+                    emptyDay.className = 'empty-day';
+                    calElement.appendChild(emptyDay);
                 }
 
+                // Draw the actual days
+                const numDays = new Date(year, month + 1, 0).getDate();
                 for (let d = 1; d <= numDays; d++) {
                     const day = document.createElement('div');
                     day.className = 'day';
                     const key = `d${d}`;
-                    day.textContent = savedData[key] || d;
+                    const note = savedData[key] || '';
+                    day.textContent = note || d;
 
-                    if (savedData[key]) {
+                    if (note) {
                         day.classList.add('highlight');
                     }
 
-                    day.addEventListener('click', async () => {
-                        const input = prompt(`Edit note for ${monthNames[month]} ${d}:`, savedData[key] || '');
-                        if (input !== null) {
-                            day.textContent = input || d;
-                            if (input) {
-                                day.classList.add('highlight');
-                                savedData[key] = input;
+                    day.addEventListener('click', () => {
+                        showEditModal(`Edit note for ${monthNames[month]} ${d}`, note, async (inputValue) => {
+                            const newNote = inputValue.trim();
+                            const dataToSave = { ...savedData };
+                            if (newNote) {
+                                dataToSave[key] = newNote;
                             } else {
-                                day.classList.remove('highlight');
-                                delete savedData[key];
+                                delete dataToSave[key];
                             }
-                            await setDoc(doc(db, "calendars", docId), savedData, { merge: true });
-                        }
+                            console.log(`Saving data for ${docId}:`, dataToSave);
+                            // Use setDoc with merge to avoid deleting other fields
+                            await setDoc(calendarRef, dataToSave, { merge: true });
+                        });
                     });
-                    cal.appendChild(day);
+                    calElement.appendChild(day);
                 }
-                block.appendChild(cal);
-                calendarContainer.appendChild(block);
-            }
+            }, (error) => {
+                console.error(`Error listening to calendar ${docId}:`, error);
+                alert(`Could not load data for ${monthNames[month]} ${year}. Check Firestore rules.`);
+            });
+
+            activeUnsubscribes.push(unsubscribe);
         }
+
     </script>
 </body>
 </html>

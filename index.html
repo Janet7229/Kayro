@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Editable Calendar with Firestore</title>
+  <title>Multi-Month Editable Calendar</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -11,52 +11,84 @@
       padding: 10px;
       margin: 0;
     }
+
     h2 {
       font-size: 1.4em;
     }
+
     .controls {
       margin: 10px 0;
     }
+
     select {
       padding: 6px;
       font-size: 1em;
       margin: 5px;
     }
+
+    .calendar-container {
+      margin: 20px auto;
+      max-width: 1000px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    .calendar-block {
+      border: 1px solid #ccc;
+      padding: 10px;
+      width: 300px;
+    }
+
+    .month-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
     .calendar {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
       gap: 4px;
-      max-width: 100%;
-      margin: auto;
     }
+
     .day-label, .day {
       padding: 10px 5px;
       border: 1px solid #ccc;
-      font-size: 0.9em;
+      font-size: 0.85em;
       min-height: 40px;
+      word-wrap: break-word;
     }
+
     .day-label {
       font-weight: bold;
       background-color: #f0f0f0;
     }
+
     .day {
       background-color: #f9f9f9;
       cursor: pointer;
       transition: background-color 0.3s;
-      word-wrap: break-word;
     }
+
     .day:hover {
       background-color: #e0e0e0;
     }
+
     .highlight {
       background-color: #ffdb99 !important;
     }
 
     @media (max-width: 600px) {
+      .calendar-block {
+        width: 100%;
+      }
+
       .day-label, .day {
         font-size: 0.75em;
-        padding: 8px 2px;
+        padding: 6px 3px;
       }
+
       h2 {
         font-size: 1.1em;
       }
@@ -64,12 +96,12 @@
   </style>
 </head>
 <body>
-  <h2>Editable Calendar</h2>
+  <h2>Editable Calendar (This Month + Next 6 Months)</h2>
   <div class="controls">
-    <select id="month"></select>
-    <select id="year"></select>
+    <select id="monthSelect"></select>
+    <select id="yearSelect"></select>
   </div>
-  <div class="calendar" id="calendar"></div>
+  <div id="calendarContainer" class="calendar-container"></div>
 
   <!-- Firebase SDK -->
   <script type="module">
@@ -88,23 +120,27 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    const calendar = document.getElementById('calendar');
-    const monthSelect = document.getElementById('month');
-    const yearSelect = document.getElementById('year');
-
-    const months = [
+    const monthNames = [
       "January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"
     ];
 
-    months.forEach((m, i) => {
+    const monthSelect = document.getElementById('monthSelect');
+    const yearSelect = document.getElementById('yearSelect');
+    const container = document.getElementById('calendarContainer');
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    // Fill dropdowns
+    for (let i = 0; i < 12; i++) {
       const opt = document.createElement('option');
       opt.value = i;
-      opt.textContent = m;
+      opt.textContent = monthNames[i];
       monthSelect.appendChild(opt);
-    });
+    }
 
-    const currentYear = new Date().getFullYear();
     for (let y = currentYear - 2; y <= currentYear + 3; y++) {
       const opt = document.createElement('option');
       opt.value = y;
@@ -112,66 +148,89 @@
       yearSelect.appendChild(opt);
     }
 
-    monthSelect.value = new Date().getMonth();
+    monthSelect.value = currentMonth;
     yearSelect.value = currentYear;
 
-    async function renderCalendar(month, year) {
-      calendar.innerHTML = "";
+    // Render 7 months of calendar
+    async function renderCalendars(baseMonth, baseYear) {
+      container.innerHTML = '';
 
-      const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
-      const saved = await getDoc(doc(db, "calendars", docId));
-      const savedData = saved.exists() ? saved.data() : {};
+      for (let offset = 0; offset < 7; offset++) {
+        const date = new Date(baseYear, baseMonth + offset, 1);
+        const month = date.getMonth();
+        const year = date.getFullYear();
+        const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
 
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      for (let d of days) {
-        const label = document.createElement('div');
-        label.className = 'day-label';
-        label.textContent = d;
-        calendar.appendChild(label);
-      }
+        const saved = await getDoc(doc(db, "calendars", docId));
+        const savedData = saved.exists() ? saved.data() : {};
 
-      const firstDay = new Date(year, month, 1).getDay();
-      const numDays = new Date(year, month + 1, 0).getDate();
+        const block = document.createElement('div');
+        block.className = 'calendar-block';
 
-      for (let i = 0; i < firstDay; i++) {
-        calendar.appendChild(document.createElement('div'));
-      }
+        const title = document.createElement('div');
+        title.className = 'month-title';
+        title.textContent = `${monthNames[month]} ${year}`;
+        block.appendChild(title);
 
-      for (let d = 1; d <= numDays; d++) {
-        const day = document.createElement('div');
-        day.className = 'day';
-        const key = `d${d}`;
-        day.textContent = savedData[key] || d;
+        const cal = document.createElement('div');
+        cal.className = 'calendar';
 
-        if (savedData[key]) {
-          day.classList.add('highlight');
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        for (let d of days) {
+          const label = document.createElement('div');
+          label.className = 'day-label';
+          label.textContent = d;
+          cal.appendChild(label);
         }
 
-        day.addEventListener('click', async () => {
-          const input = prompt(`Enter note for ${months[month]} ${d}:`, savedData[key] || '');
-          if (input !== null) {
-            day.textContent = input || d;
-            if (input) {
-              day.classList.add('highlight');
-              savedData[key] = input;
-            } else {
-              day.classList.remove('highlight');
-              delete savedData[key];
-            }
-            await setDoc(doc(db, "calendars", docId), savedData);
-          }
-        });
+        const firstDay = new Date(year, month, 1).getDay();
+        const numDays = new Date(year, month + 1, 0).getDate();
 
-        calendar.appendChild(day);
+        for (let i = 0; i < firstDay; i++) {
+          cal.appendChild(document.createElement('div'));
+        }
+
+        for (let d = 1; d <= numDays; d++) {
+          const day = document.createElement('div');
+          day.className = 'day';
+          const key = `d${d}`;
+          day.textContent = savedData[key] || d;
+
+          if (savedData[key]) {
+            day.classList.add('highlight');
+          }
+
+          day.addEventListener('click', async () => {
+            const input = prompt(`Note for ${monthNames[month]} ${d}:`, savedData[key] || '');
+            if (input !== null) {
+              day.textContent = input || d;
+              if (input) {
+                day.classList.add('highlight');
+                savedData[key] = input;
+              } else {
+                day.classList.remove('highlight');
+                delete savedData[key];
+              }
+              await setDoc(doc(db, "calendars", docId), savedData);
+            }
+          });
+
+          cal.appendChild(day);
+        }
+
+        block.appendChild(cal);
+        container.appendChild(block);
       }
     }
 
-    renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+    renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
+
     monthSelect.addEventListener('change', () => {
-      renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+      renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
     });
+
     yearSelect.addEventListener('change', () => {
-      renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+      renderCalendars(parseInt(monthSelect.value), parseInt(yearSelect.value));
     });
   </script>
 </body>

@@ -267,6 +267,7 @@
         // --- State for Copy/Paste ---
         let copiedData = null;
         let pressTimer = null;
+        let justCopied = false; // <-- FIX: New flag to prevent immediate paste
 
         // --- Toast Notification ---
         function showToast(message) {
@@ -282,7 +283,9 @@
             setTimeout(() => {
                 toast.classList.remove('show');
                 setTimeout(() => {
-                    document.body.removeChild(toast);
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
                 }, 500);
             }, 2000);
         }
@@ -451,7 +454,13 @@
 
                     // --- Event Listeners for Copy/Paste/Edit ---
                     const handleMouseUp = async () => {
-                        clearTimeout(pressTimer); // Prevent hold action on a normal click
+                        clearTimeout(pressTimer);
+                        
+                        // FIX: If this mouseup is ending a copy action, reset the flag and stop.
+                        if (justCopied) {
+                            justCopied = false;
+                            return;
+                        }
                         
                         // PASTE LOGIC
                         if (copiedData) {
@@ -479,9 +488,9 @@
 
                     const handleMouseDown = () => {
                         pressTimer = setTimeout(() => {
-                            // COPY LOGIC (on hold)
                             if (dayData.note) {
                                 copiedData = { ...dayData };
+                                justCopied = true; // FIX: Set the flag to true on successful copy
                                 document.body.classList.add('paste-mode');
                                 showToast('Copied! Click another date to paste.');
                             }

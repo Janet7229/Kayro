@@ -114,6 +114,13 @@
         .empty-day {
             background-color: transparent;
         }
+        
+        /* --- Day Background Colors --- */
+        .day.bg-blue { background-color: #a0c4ff !important; }
+        .day.bg-red { background-color: #ffadad !important; }
+        .day.bg-yellow { background-color: #ffd6a5 !important; }
+        .day.bg-purple { background-color: #bdb2ff !important; }
+
 
         /* --- Modal --- */
         .modal-backdrop {
@@ -146,6 +153,29 @@
         .modal-buttons .cancel-btn { background-color: #95a5a6; }
         .modal-buttons .cancel-btn:hover { background-color: #7f8c8d; }
 
+        /* --- Modal Color Picker --- */
+        .color-picker {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .color-option:hover {
+            transform: scale(1.1);
+        }
+        .color-option.selected {
+            border-color: #333;
+            transform: scale(1.15);
+        }
+
         @media (max-width: 600px) {
             .calendar-block { width: 100%; }
             body { padding: 10px; }
@@ -168,8 +198,14 @@
     <div id="modal" class="modal-backdrop" style="display: none;">
         <div class="modal-content">
             <h3 id="modalTitle">Edit Note</h3>
-            <p id="modalMessage" style="display: none;"></p>
             <input type="text" id="modalInput" />
+            <div id="modalColorPicker" class="color-picker">
+                <div class="color-option" data-color="default" style="background-color: #a2e2a2;"></div>
+                <div class="color-option" data-color="blue" style="background-color: #a0c4ff;"></div>
+                <div class="color-option" data-color="red" style="background-color: #ffadad;"></div>
+                <div class="color-option" data-color="yellow" style="background-color: #ffd6a5;"></div>
+                <div class="color-option" data-color="purple" style="background-color: #bdb2ff;"></div>
+            </div>
             <div class="modal-buttons">
                 <button id="modalCancel" class="cancel-btn">Cancel</button>
                 <button id="modalSave">Save</button>
@@ -182,8 +218,6 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-        // --- Firebase Configuration ---
-        // NOTE: Corrected storageBucket URL to use the standard .appspot.com domain
         const firebaseConfig = {
             apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
             authDomain: "shamankingdata.firebaseapp.com",
@@ -193,31 +227,52 @@
             appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
         };
 
-        // --- Initialize Firebase ---
-        console.log("Initializing Firebase...");
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        console.log("Firebase initialized.");
 
-        // --- Configuration & Element Selection ---
-        // UPDATED: Changed the admin email to match the one from your screenshot.
         const adminEmail = "jkayro22@yahoo.com";
         const loginDiv = document.getElementById("login");
         const loginBtn = document.getElementById("loginBtnAction");
         const logoutBtn = document.getElementById("logoutBtn");
         const calendarContainer = document.getElementById("calendarContainer");
-        let activeUnsubscribes = []; // To store snapshot listeners
+        let activeUnsubscribes = [];
 
         // --- Modal Logic ---
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');
         const modalInput = document.getElementById('modalInput');
+        const modalColorPicker = document.getElementById('modalColorPicker');
         let onSaveCallback = null;
+        let selectedColor = 'default';
 
-        function showEditModal(title, initialValue, onSave) {
+        modalColorPicker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('color-option')) {
+                // Remove 'selected' from any previously selected option
+                const currentSelected = modalColorPicker.querySelector('.selected');
+                if (currentSelected) {
+                    currentSelected.classList.remove('selected');
+                }
+                // Add 'selected' to the clicked option
+                e.target.classList.add('selected');
+                selectedColor = e.target.dataset.color;
+            }
+        });
+
+        function showEditModal(title, dayData, onSave) {
             modalTitle.textContent = title;
-            modalInput.value = initialValue;
+            modalInput.value = dayData.note || '';
+            selectedColor = dayData.color || 'default';
+            
+            const currentSelected = modalColorPicker.querySelector('.selected');
+            if (currentSelected) {
+                currentSelected.classList.remove('selected');
+            }
+            const newSelectedOption = modalColorPicker.querySelector(`[data-color="${selectedColor}"]`);
+            if (newSelectedOption) {
+                newSelectedOption.classList.add('selected');
+            }
+
             onSaveCallback = onSave;
             modal.style.display = 'flex';
             modalInput.focus();
@@ -230,92 +285,65 @@
 
         document.getElementById('modalSave').addEventListener('click', () => {
             if (onSaveCallback) {
-                onSaveCallback(modalInput.value);
+                onSaveCallback(modalInput.value, selectedColor);
             }
             hideModal();
         });
         document.getElementById('modalCancel').addEventListener('click', hideModal);
 
-
-        // --- Functions ---
         const login = async () => {
             const email = document.getElementById("email").value;
             const password = document.getElementById("password").value;
-            console.log(`Attempting to login with email: ${email}`);
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-                console.log("Login successful via function call.");
             } catch (err) {
-                console.error("Login failed:", err.message);
-                alert("Login Failed: " + err.message); // Simple alert for login failure is okay
+                alert("Login Failed: " + err.message);
             }
         };
 
-        const logout = () => {
-            console.log("Logging out.");
-            signOut(auth);
-        };
+        const logout = () => signOut(auth);
         
-        // --- Attach Event Listeners ---
         loginBtn.addEventListener('click', login);
         logoutBtn.addEventListener('click', logout);
 
-        // --- Authentication State Change Handler ---
         onAuthStateChanged(auth, user => {
-            console.log("Auth state changed. Checking user...");
-            if (user) {
-                console.log(`User is signed in. Email: ${user.email}`);
-                // The crucial check: does the logged-in email match the admin email?
-                if (user.email === adminEmail) {
-                    console.log("Admin user confirmed. Showing calendar.");
-                    loginDiv.style.display = "none";
-                    logoutBtn.style.display = "inline-block";
-                    calendarContainer.style.display = "flex";
-                    document.getElementById("header").textContent = `Welcome, Admin!`;
-                    renderAndListenToCalendars(); // Switched to the real-time function
-                } else {
-                    console.warn("Login successful, but user is not an admin. Forcing logout.");
-                    alert(`Login successful, but ${user.email} is not an authorized admin.`);
-                    signOut(auth); // Log out non-admin users
-                }
+            if (user && user.email === adminEmail) {
+                loginDiv.style.display = "none";
+                logoutBtn.style.display = "inline-block";
+                calendarContainer.style.display = "flex";
+                document.getElementById("header").textContent = `Welcome, Admin!`;
+                renderAndListenToCalendars();
             } else {
-                console.log("No user is signed in. Showing login form.");
+                if (user) { // If a non-admin user is logged in, show message and log out
+                    alert(`Login successful, but ${user.email} is not an authorized admin.`);
+                    signOut(auth);
+                }
                 loginDiv.style.display = "block";
                 logoutBtn.style.display = "none";
                 calendarContainer.style.display = "none";
                 document.getElementById("header").textContent = "Admin Calendar (Login Required)";
-                
-                // Clean up old listeners when user logs out
-                console.log("Cleaning up old calendar listeners.");
                 activeUnsubscribes.forEach(unsub => unsub());
                 activeUnsubscribes = [];
             }
         });
 
-        // --- Calendar Rendering Logic ---
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
         function renderAndListenToCalendars() {
-            console.log("Starting calendar render process...");
             const now = new Date();
-            const baseMonth = now.getMonth();
-            const baseYear = now.getFullYear();
-            calendarContainer.innerHTML = ""; // Clear previous calendars
-
-            // Clean up any lingering listeners before creating new ones
+            calendarContainer.innerHTML = "";
             activeUnsubscribes.forEach(unsub => unsub());
             activeUnsubscribes = [];
 
             for (let offset = 0; offset < 7; offset++) {
-                const date = new Date(baseYear, baseMonth + offset, 1);
+                const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
                 const month = date.getMonth();
                 const year = date.getFullYear();
                 const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
                 
-                // Create placeholder structure immediately
                 const block = document.createElement('div');
                 block.className = 'calendar-block';
-                block.id = `cal-block-${docId}`; // Give it an ID to find it later
+                block.id = `cal-block-${docId}`;
                 
                 const title = document.createElement('div');
                 title.className = 'month-title';
@@ -328,27 +356,19 @@
                 block.appendChild(cal);
                 calendarContainer.appendChild(block);
 
-                // Now, listen for data for this calendar
                 listenToCalendarData(year, month, docId);
             }
-            console.log("All calendar placeholders created.");
         }
 
         function listenToCalendarData(year, month, docId) {
             const calendarRef = doc(db, "calendars", docId);
 
             const unsubscribe = onSnapshot(calendarRef, (docSnap) => {
-                console.log(`Received update for calendar: ${docId}`);
                 const savedData = docSnap.exists() ? docSnap.data() : {};
-                
                 const calElement = document.getElementById(`cal-${docId}`);
-                if (!calElement) {
-                    console.error(`Could not find calendar element for ${docId}`);
-                    return;
-                }
-                calElement.innerHTML = ''; // Clear old days before redrawing
+                if (!calElement) return;
+                calElement.innerHTML = '';
 
-                // Draw day labels
                 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
                 days.forEach(d => {
                     const label = document.createElement('div');
@@ -357,46 +377,48 @@
                     calElement.appendChild(label);
                 });
 
-                // Draw empty days for spacing
                 const firstDay = new Date(year, month, 1).getDay();
                 for (let i = 0; i < firstDay; i++) {
-                    const emptyDay = document.createElement('div');
-                    emptyDay.className = 'empty-day';
-                    calElement.appendChild(emptyDay);
+                    calElement.appendChild(document.createElement('div'));
                 }
 
-                // Draw the actual days
                 const numDays = new Date(year, month + 1, 0).getDate();
                 for (let d = 1; d <= numDays; d++) {
                     const day = document.createElement('div');
                     day.className = 'day';
                     const key = `d${d}`;
-                    const note = savedData[key] || '';
+                    
+                    // Data is now an object {note: '', color: ''} or undefined
+                    const dayData = savedData[key] || {};
+                    const note = dayData.note || '';
+                    const color = dayData.color || 'default';
+
                     day.textContent = note || d;
 
+                    // Apply highlight and color classes
                     if (note) {
                         day.classList.add('highlight');
+                        if (color && color !== 'default') {
+                            day.classList.add(`bg-${color}`);
+                        }
                     }
 
                     day.addEventListener('click', () => {
-                        showEditModal(`Edit note for ${monthNames[month]} ${d}`, note, async (inputValue) => {
-                            const newNote = inputValue.trim();
-                            const dataToSave = { ...savedData };
-                            if (newNote) {
-                                dataToSave[key] = newNote;
+                        showEditModal(`Edit note for ${monthNames[month]} ${d}`, dayData, async (newNoteText, newColor) => {
+                            const trimmedNote = newNoteText.trim();
+                            const dataToSave = { ...savedData }; // Make a copy of the month's data
+
+                            if (trimmedNote) {
+                                dataToSave[key] = { note: trimmedNote, color: newColor };
                             } else {
-                                delete dataToSave[key];
+                                delete dataToSave[key]; // If note is empty, remove the entry
                             }
-                            console.log(`Saving data for ${docId}:`, dataToSave);
-                            // Use setDoc with merge to avoid deleting other fields
-                            await setDoc(calendarRef, dataToSave, { merge: true });
+                            
+                            await setDoc(calendarRef, dataToSave);
                         });
                     });
                     calElement.appendChild(day);
                 }
-            }, (error) => {
-                console.error(`Error listening to calendar ${docId}:`, error);
-                alert(`Could not load data for ${monthNames[month]} ${year}. Check Firestore rules.`);
             });
 
             activeUnsubscribes.push(unsubscribe);

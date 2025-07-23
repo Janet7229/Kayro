@@ -1,54 +1,168 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Editable Calendar</title>
+  <meta charset="UTF-8" />
+  <title>Editable Calendar with Firestore</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       text-align: center;
+      padding: 20px;
+    }
+    .controls {
+      margin-bottom: 20px;
+    }
+    select {
+      padding: 5px;
+      font-size: 16px;
     }
     .calendar {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
       gap: 5px;
-      max-width: 300px;
+      max-width: 420px;
       margin: auto;
     }
-    .day {
-      padding: 20px;
+    .day-label, .day {
+      padding: 15px;
       border: 1px solid #ccc;
-      cursor: pointer;
+    }
+    .day-label {
+      font-weight: bold;
+      background-color: #f0f0f0;
+    }
+    .day {
       background-color: #f9f9f9;
+      cursor: pointer;
       transition: background-color 0.3s;
     }
     .day:hover {
       background-color: #e0e0e0;
     }
+    .highlight {
+      background-color: #ffdb99 !important;
+    }
   </style>
 </head>
 <body>
-  <h2>Editable Calendar</h2>
+  <h2>Editable Calendar with Firestore</h2>
+  <div class="controls">
+    <select id="month"></select>
+    <select id="year"></select>
+  </div>
   <div class="calendar" id="calendar"></div>
 
-  <script>
+  <!-- Firebase SDK -->
+  <script type="module">
+    // 👉 Step 1: Import Firebase
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // 👉 Step 2: Your Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
+      authDomain: "shamankingdata.firebaseapp.com",
+      projectId: "shamankingdata",
+      storageBucket: "shamankingdata.firebasestorage.app",
+      messagingSenderId: "757444066890",
+      appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
+    };
+
+    // 👉 Step 3: Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
     const calendar = document.getElementById('calendar');
+    const monthSelect = document.getElementById('month');
+    const yearSelect = document.getElementById('year');
 
-    // Generate calendar for 30 days
-    for (let i = 1; i <= 30; i++) {
-      const day = document.createElement('div');
-      day.className = 'day';
-      day.textContent = i;
-      
-      day.addEventListener('click', function() {
-        const input = prompt("Enter letter or number:");
-        if (input !== null && input !== "") {
-          day.textContent = input;
-          day.style.backgroundColor = '#ffdb99'; // highlight color
-        }
-      });
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
 
-      calendar.appendChild(day);
+    // Populate dropdowns
+    months.forEach((m, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = m;
+      monthSelect.appendChild(opt);
+    });
+
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 2; y <= currentYear + 3; y++) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      yearSelect.appendChild(opt);
     }
+
+    // Set default date
+    monthSelect.value = new Date().getMonth();
+    yearSelect.value = currentYear;
+
+    async function renderCalendar(month, year) {
+      calendar.innerHTML = "";
+
+      const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const saved = await getDoc(doc(db, "calendars", docId));
+      const savedData = saved.exists() ? saved.data() : {};
+
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      for (let d of days) {
+        const label = document.createElement('div');
+        label.className = 'day-label';
+        label.textContent = d;
+        calendar.appendChild(label);
+      }
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const numDays = new Date(year, month + 1, 0).getDate();
+
+      // Add blank spaces
+      for (let i = 0; i < firstDay; i++) {
+        calendar.appendChild(document.createElement('div'));
+      }
+
+      for (let d = 1; d <= numDays; d++) {
+        const day = document.createElement('div');
+        day.className = 'day';
+        const key = `d${d}`;
+        day.textContent = savedData[key] || d;
+
+        if (savedData[key]) {
+          day.classList.add('highlight');
+        }
+
+        day.addEventListener('click', async () => {
+          const input = prompt(`Enter note for ${months[month]} ${d}:`, savedData[key] || '');
+          if (input !== null) {
+            day.textContent = input || d;
+            if (input) {
+              day.classList.add('highlight');
+              savedData[key] = input;
+            } else {
+              day.classList.remove('highlight');
+              delete savedData[key];
+            }
+            await setDoc(doc(db, "calendars", docId), savedData);
+          }
+        });
+
+        calendar.appendChild(day);
+      }
+    }
+
+    // Initial render
+    renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+
+    // Change month/year
+    monthSelect.addEventListener('change', () => {
+      renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+    });
+    yearSelect.addEventListener('change', () => {
+      renderCalendar(parseInt(monthSelect.value), parseInt(yearSelect.value));
+    });
   </script>
 </body>
 </html>
